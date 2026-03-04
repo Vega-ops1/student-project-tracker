@@ -1,161 +1,131 @@
 import { useRouter } from "expo-router";
+import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { Alert, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { auth, db } from "../firebase";
 
-export default function LoginScreen() {
+export default function Login() {
   const router = useRouter();
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const [failCount, setFailCount] = useState(0);
-  const [lockStage, setLockStage] = useState(0);
-  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
-
-  const MAX_FAIL = 3;
-
-  // ⏱ ตรวจสอบ cooldown
+  // ✅ เช็คสถานะ login อัตโนมัติ
   useEffect(() => {
-    if (!cooldownUntil) return;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const userRef = doc(db, "users", user.email!);
+        const userSnap = await getDoc(userRef);
 
-    const interval = setInterval(() => {
-      const now = Date.now();
+        if (userSnap.exists()) {
+          const data = userSnap.data();
 
-      if (now >= cooldownUntil) {
-        setCooldownUntil(null);
-        setFailCount(0);
-        Alert.alert("หมดเวลาคูลดาวน์", "คุณสามารถลองเข้าสู่ระบบใหม่ได้");
+          if (!data.role) {
+            router.replace("/select-role");
+          } else if (data.role === "teacher") {
+            router.replace("/teacher");
+          } else {
+            router.replace("/projects");
+          }
+        }
       }
-    }, 1000);
+    });
 
-    return () => clearInterval(interval);
-  }, [cooldownUntil]);
+    return unsubscribe;
+  }, []);
 
-  const handleLogin = () => {
-    const now = Date.now();
-
-    // 🔒 ล็อกถาวร
-    if (lockStage === 3) {
-      Alert.alert("บัญชีถูกล็อกถาวร", "กรุณาติดต่อผู้ดูแลระบบ");
-      return;
-    }
-
-    // ⏳ อยู่ในช่วง cooldown
-    if (cooldownUntil && now < cooldownUntil) {
-      const secondsLeft = Math.ceil((cooldownUntil - now) / 1000);
-      Alert.alert("ติดคูลดาวน์", `กรุณารออีก ${secondsLeft} วินาที`);
-      return;
-    }
-
-    // ✅ ล็อกอินถูกต้อง
-    if (username === "student" && password === "1234") {
-      setFailCount(0);
-      router.replace("/");
-      return;
-    }
-
-    // ❌ ล็อกอินผิด
-    const newFail = failCount + 1;
-    setFailCount(newFail);
-
-    if (newFail >= MAX_FAIL) {
-      if (lockStage === 0) {
-        setCooldownUntil(now + 5 * 60 * 1000); // 5 นาที
-        setLockStage(1);
-        Alert.alert("ใส่ผิดครบ 3 ครั้ง", "ติดคูลดาวน์ 5 นาที");
-      } else if (lockStage === 1) {
-        setCooldownUntil(now + 30 * 60 * 1000); // 30 นาที
-        setLockStage(2);
-        Alert.alert("ใส่ผิดอีกครั้ง", "ติดคูลดาวน์ 30 นาที");
-      } else if (lockStage === 2) {
-        setLockStage(3);
-        Alert.alert("บัญชีถูกล็อกถาวร", "กรุณาติดต่อผู้ดูแลระบบ");
-      }
-      setFailCount(0);
-    } else {
-      Alert.alert("Login ไม่สำเร็จ", `รหัสผิด (${newFail}/${MAX_FAIL})`);
+  // ✅ Login ปกติ
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      Alert.alert("Login Error", error.message);
     }
   };
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        padding: 30,
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 28,
-          fontWeight: "bold",
-          textAlign: "center",
-          marginBottom: 30,
-        }}
-      >
-        Login
-      </Text>
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Login</Text>
 
-      <TextInput
-        placeholder="Username"
-        value={username}
-        onChangeText={setUsername}
-        style={{
-          borderWidth: 1,
-          padding: 12,
-          marginBottom: 15,
-          borderRadius: 8,
-        }}
-      />
+        <TextInput
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+        />
 
-      <TextInput
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        style={{
-          borderWidth: 1,
-          padding: 12,
-          marginBottom: 20,
-          borderRadius: 8,
-        }}
-      />
+        <TextInput
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          style={styles.input}
+        />
 
-      {/* 🔵 ปุ่ม Login */}
-      <TouchableOpacity
-        onPress={handleLogin}
-        style={{
-          backgroundColor: "#2196F3",
-          padding: 15,
-          borderRadius: 8,
-          marginBottom: 15,
-        }}
-      >
-        <Text
-          style={{
-            color: "white",
-            textAlign: "center",
-            fontWeight: "bold",
-          }}
-        >
-          LOGIN
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+          <Text style={styles.buttonText}>LOGIN</Text>
+        </TouchableOpacity>
 
-      {/* 🟢 สมัครสมาชิก */}
-      <TouchableOpacity
-        onPress={() => router.push("/register")}
-        style={{ marginBottom: 10 }}
-      >
-        <Text style={{ textAlign: "center", color: "green" }}>สมัครสมาชิก</Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/register")}>
+          <Text style={styles.link}>สมัครสมาชิก</Text>
+        </TouchableOpacity>
 
-      {/* 🔵 ลืมรหัสผ่าน */}
-      <TouchableOpacity onPress={() => router.push("/reset-password")}>
-        <Text style={{ textAlign: "center", color: "#2196F3" }}>
-          ลืมรหัสผ่าน?
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/reset-password")}>
+          <Text style={styles.link}>ลืมรหัสผ่าน</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#eee",
+  },
+  card: {
+    width: "85%",
+    backgroundColor: "white",
+    padding: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    marginBottom: 15,
+    borderRadius: 6,
+  },
+  button: {
+    backgroundColor: "#2e86de",
+    padding: 12,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  buttonText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  link: {
+    color: "blue",
+    marginTop: 10,
+    textAlign: "center",
+  },
+});
